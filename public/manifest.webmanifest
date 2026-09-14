@@ -1,0 +1,12 @@
+{
+  "name": "M'dede Restaurant",
+  "short_name": "M'dede",
+  "description": "Paper-plus-desktop restaurant and bar station for M'dede Restaurant.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#14110e",
+  "theme_color": "#14110e",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

@@ -1,0 +1,108 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@theme {
+  --font-sans: "Figtree", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", "Times New Roman", serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --color-background: #14110e;
+  --color-foreground: #f3ece4;
+  --color-card: #1c1814;
+  --color-card-foreground: #f3ece4;
+  --color-popover: #221c18;
+  --color-popover-foreground: #f3ece4;
+  --color-primary: #c45c3a;
+  --color-primary-foreground: #fff7f2;
+  --color-secondary: #2a241f;
+  --color-secondary-foreground: #f3ece4;
+  --color-muted: #2a241f;
+  --color-muted-foreground: #9c9084;
+  --color-accent: #3a322c;
+  --color-accent-foreground: #f3ece4;
+  --color-destructive: #b5463a;
+  --color-destructive-foreground: #fff7f2;
+  --color-border: #3a322c;
+  --color-input: #3a322c;
+  --color-ring: #c45c3a;
+  --color-success: #4f8f6a;
+  --color-success-foreground: #ecf8f0;
+  --color-warning: #c4893a;
+  --color-warning-foreground: #fff6e8;
+  --color-paper: #efe6d9;
+  --color-paper-foreground: #1c1612;
+  --color-ticket: #f7f1e6;
+
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+  --radius: 0.75rem;
+
+  --shadow-panel: 0 1px 0 rgba(243, 236, 228, 0.04), 0 18px 40px rgba(0, 0, 0, 0.28);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background: var(--color-background);
+    color: var(--color-foreground);
+  }
+
+  body {
+    min-height: 100dvh;
+    background: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+    font-family: var(--font-display);
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-sheet {
+    display: block !important;
+  }
+}
