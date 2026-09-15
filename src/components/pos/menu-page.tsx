@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,15 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { formatMoney } from "@/lib/money";
-import { adminListMenu, saveCategory, saveMenuItem, saveModifier, toggleItemFlag } from "@/lib/server/menu";
+import { cloudinaryThumb, resizeImageToDataUrl } from "@/lib/image";
+import {
+  adminListMenu,
+  saveCategory,
+  saveMenuItem,
+  saveModifier,
+  toggleItemFlag,
+  uploadMenuItemImage,
+} from "@/lib/server/menu";
 import { getRestaurant } from "@/lib/server/pos";
 import type { ItemKind, MenuItem, Modifier } from "@/lib/types";
 import { useStaffSession } from "@/store/session";
@@ -25,7 +33,7 @@ export function MenuPage() {
   const [edit, setEdit] = useState<MenuItem | "new" | null>(null);
   const [catOpen, setCatOpen] = useState(false);
   const [modOpen, setModOpen] = useState(false);
-  const currency = restaurantQ.data?.currency ?? "UGX";
+  const currency = restaurantQ.data?.currency ?? "MWK";
 
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ["admin-menu"] });
@@ -53,9 +61,22 @@ export function MenuPage() {
           <Button variant="outline" onClick={() => setModOpen(true)}>
             Modifier
           </Button>
-          <Button onClick={() => setEdit("new")}>New item</Button>
+          <Button
+            onClick={() => setEdit("new")}
+            disabled={!menu.data?.categories.length}
+            title={!menu.data?.categories.length ? "Add a category first" : undefined}
+          >
+            New item
+          </Button>
         </div>
       </div>
+
+      {menu.data && menu.data.categories.length === 0 ? (
+        <p className="mt-6 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+          No categories yet — add one with the <span className="font-medium">Category</span> button above before
+          adding meals or beverages.
+        </p>
+      ) : null}
 
       {(menu.data?.categories ?? []).map((c) => (
         <section key={c.id} className="mt-8">
@@ -78,11 +99,22 @@ export function MenuPage() {
                 {c.items.map((item) => (
                   <tr key={item.id} className="border-t border-border">
                     <td className="px-3 py-3">
-                      <button type="button" className="text-left font-medium hover:underline" onClick={() => setEdit(item)}>
-                        {item.name}
-                      </button>
-                      <p className="text-xs text-muted-foreground">{item.description}</p>
-                      {item.stockNote ? <p className="text-xs text-warning">{item.stockNote}</p> : null}
+                      <div className="flex items-start gap-3">
+                        {item.imageUrl ? (
+                          <img
+                            src={cloudinaryThumb(item.imageUrl, "w_80,h_80,c_fill,g_auto,f_auto,q_auto")}
+                            alt=""
+                            className="h-10 w-10 shrink-0 rounded-md border border-border object-cover"
+                          />
+                        ) : null}
+                        <div>
+                          <button type="button" className="text-left font-medium hover:underline" onClick={() => setEdit(item)}>
+                            {item.name}
+                          </button>
+                          <p className="text-xs text-muted-foreground">{item.description}</p>
+                          {item.stockNote ? <p className="text-xs text-warning">{item.stockNote}</p> : null}
+                        </div>
+                      </div>
                     </td>
                     <td className="px-3 py-3 tabular-nums">{formatMoney(item.price, currency)}</td>
                     <td className="px-3 py-3">
@@ -159,8 +191,17 @@ function ItemEditor({
 }) {
   const [name, setName] = useState(item?.name ?? "");
   const [description, setDescription] = useState(item?.description ?? "");
+  const [imageUrl, setImageUrl] = useState(item?.imageUrl ?? "");
+  const [imageBusy, setImageBusy] = useState(false);
   const [price, setPrice] = useState(String(item?.price ?? 0));
   const [categoryId, setCategoryId] = useState(item?.categoryId ?? categories[0]?.id ?? 0);
+  // Categories can still be mid-fetch the instant this dialog opens (or a category
+  // gets added while it's open) — keep the selection in sync so it never silently
+  // saves against a stale/zero id that doesn't match any real category.
+  useEffect(() => {
+    if (item) return;
+    if (categoryId === 0 && categories[0]) setCategoryId(categories[0].id);
+  }, [categories, categoryId, item]);
   const [soldOut, setSoldOut] = useState(item?.soldOut ?? false);
   const [isSpecial, setIsSpecial] = useState(item?.isSpecial ?? false);
   const [lowStock, setLowStock] = useState(item?.lowStock ?? false);
@@ -177,6 +218,53 @@ function ItemEditor({
         <div className="grid gap-3">
           <Input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
           <Textarea placeholder="Description" value={description} onChange={(e) => setDescription(e.target.value)} />
+          <div>
+            <p className="mb-2 text-sm text-muted-foreground">Photo</p>
+            <div className="flex items-center gap-3">
+              {imageUrl ? (
+                <img
+                  src={cloudinaryThumb(imageUrl, "w_128,h_128,c_fill,g_auto,f_auto,q_auto")}
+                  alt=""
+                  className="h-16 w-16 rounded-lg border border-border object-cover"
+                />
+              ) : (
+                <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-dashed border-border text-[10px] text-muted-foreground">
+                  No photo
+                </div>
+              )}
+              <div className="flex flex-col gap-1.5">
+                <label className="inline-flex h-9 cursor-pointer items-center rounded-md border border-input bg-background px-3 text-sm hover:bg-accent">
+                  {imageBusy ? "Processing…" : imageUrl ? "Change photo" : "Upload photo"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={imageBusy}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = "";
+                      if (!file) return;
+                      setImageBusy(true);
+                      resizeImageToDataUrl(file, 1600, 0.82)
+                        .then((dataUrl) => uploadMenuItemImage({ data: { token, dataUrl } }))
+                        .then((res) => setImageUrl(res.url))
+                        .catch((err: Error) => toast.error(err.message))
+                        .finally(() => setImageBusy(false));
+                    }}
+                  />
+                </label>
+                {imageUrl ? (
+                  <button
+                    type="button"
+                    className="text-left text-xs text-muted-foreground hover:underline"
+                    onClick={() => setImageUrl("")}
+                  >
+                    Remove photo
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
           <Input inputMode="numeric" placeholder="Price" value={price} onChange={(e) => setPrice(e.target.value)} />
           <select
             className="h-11 rounded-md border border-input bg-background px-3"
@@ -221,6 +309,7 @@ function ItemEditor({
             </div>
           </div>
           <Button
+            disabled={imageBusy}
             onClick={() =>
               void saveMenuItem({
                 data: {
@@ -229,6 +318,7 @@ function ItemEditor({
                   categoryId,
                   name,
                   description,
+                  imageUrl,
                   price: Number(price) || 0,
                   soldOut,
                   isSpecial,

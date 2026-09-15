@@ -68,7 +68,7 @@ export function GuidePage() {
       <ul className="space-y-1 text-sm leading-relaxed">
         <li>Meals and drinks only — no rooms, no spa, no inventory purchasing.</li>
         <li>One restaurant per owner account. Several browsers can share that restaurant.</li>
-        <li>Currency defaults to UGX; tax default 18% exclusive of prices.</li>
+        <li>Currency defaults to MWK (Malawian Kwacha); tax default 18% exclusive of prices. Both can be changed under Settings.</li>
         <li>Kitchen printer is the OS print dialog (configure the 80mm device there).</li>
         <li>Manager PIN authorises voids when the signed-in role cannot void.</li>
       </ul>

@@ -127,28 +127,55 @@ export function receiptHtml(order: Order, restaurant: Restaurant) {
     </body></html>`;
 }
 
-export function printHtml(html: string) {
-  const iframe = document.createElement("iframe");
-  iframe.setAttribute("aria-hidden", "true");
-  iframe.style.position = "fixed";
-  iframe.style.right = "0";
-  iframe.style.bottom = "0";
-  iframe.style.width = "0";
-  iframe.style.height = "0";
-  iframe.style.border = "0";
-  document.body.appendChild(iframe);
-  const doc = iframe.contentDocument;
-  if (!doc) return;
-  doc.open();
-  doc.write(html);
-  doc.close();
-  const run = () => {
-    iframe.contentWindow?.focus();
-    iframe.contentWindow?.print();
-    setTimeout(() => iframe.remove(), 1000);
-  };
-  iframe.onload = run;
-  setTimeout(run, 250);
+/**
+ * Opens the browser print dialog for `html` in a hidden iframe and resolves
+ * once that dialog has closed — via the `afterprint` event, with a fallback
+ * timeout for browsers/print previews that don't fire it reliably.
+ *
+ * Note: `afterprint` fires whether the person actually printed OR cancelled
+ * the dialog — no browser exposes that distinction. Callers that need to
+ * treat "printed" as a real, committed action (e.g. marking a kitchen ticket
+ * as sent) must not infer success from this resolving; they should ask the
+ * person to confirm afterward instead.
+ */
+export function printHtml(html: string): Promise<void> {
+  return new Promise((resolve) => {
+    const iframe = document.createElement("iframe");
+    iframe.setAttribute("aria-hidden", "true");
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    document.body.appendChild(iframe);
+    const doc = iframe.contentDocument;
+    if (!doc) {
+      resolve();
+      return;
+    }
+    doc.open();
+    doc.write(html);
+    doc.close();
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      iframe.remove();
+      resolve();
+    };
+    const run = () => {
+      const win = iframe.contentWindow;
+      win?.addEventListener("afterprint", finish);
+      win?.focus();
+      win?.print();
+      // Fallback for browsers that don't fire afterprint for iframe-hosted
+      // print jobs (or when print is unavailable) — never hang forever.
+      setTimeout(finish, 4000);
+    };
+    iframe.onload = run;
+    setTimeout(run, 250);
+  });
 }
 
 export type ReportColumn = { key: string; label: string; align?: "left" | "right" };

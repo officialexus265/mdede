@@ -8,7 +8,9 @@ import { setupRestaurant } from "@/lib/server/pos";
 
 export function SetupWizard({ onDone }: { onDone: () => void }) {
   const [name, setName] = useState("M'dede Restaurant");
-  const [address, setAddress] = useState("Kampala");
+  const [address, setAddress] = useState("Lilongwe");
+  const [currency, setCurrency] = useState("MWK");
+  const [timezone, setTimezone] = useState("Africa/Blantyre");
   const [phone, setPhone] = useState("");
   const [taxRate, setTaxRate] = useState(18);
   const [serviceCharge, setServiceCharge] = useState(0);
@@ -23,6 +25,8 @@ export function SetupWizard({ onDone }: { onDone: () => void }) {
           name,
           address,
           phone,
+          currency,
+          timezone,
           taxRate,
           serviceCharge,
           tableCount,
@@ -54,6 +58,37 @@ export function SetupWizard({ onDone }: { onDone: () => void }) {
           </Field>
           <Field label="Phone">
             <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Currency">
+            <select
+              className="h-11 rounded-md border border-input bg-background px-3"
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+            >
+              <option value="MWK">MWK — Malawian Kwacha</option>
+              <option value="UGX">UGX — Ugandan Shilling</option>
+              <option value="KES">KES — Kenyan Shilling</option>
+              <option value="TZS">TZS — Tanzanian Shilling</option>
+              <option value="ZMW">ZMW — Zambian Kwacha</option>
+              <option value="ZAR">ZAR — South African Rand</option>
+              <option value="USD">USD — US Dollar</option>
+            </select>
+          </Field>
+          <Field label="Timezone">
+            <select
+              className="h-11 rounded-md border border-input bg-background px-3"
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+            >
+              <option value="Africa/Blantyre">Africa/Blantyre (Malawi)</option>
+              <option value="Africa/Lusaka">Africa/Lusaka</option>
+              <option value="Africa/Nairobi">Africa/Nairobi</option>
+              <option value="Africa/Kampala">Africa/Kampala</option>
+              <option value="Africa/Dar_es_Salaam">Africa/Dar_es_Salaam</option>
+              <option value="Africa/Johannesburg">Africa/Johannesburg</option>
+            </select>
           </Field>
         </div>
         <div className="grid grid-cols-2 gap-3">

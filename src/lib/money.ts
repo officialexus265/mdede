@@ -1,4 +1,4 @@
-export function formatMoney(amount: number, currency = "UGX"): string {
+export function formatMoney(amount: number, currency = "MWK"): string {
   const n = Math.round(Number(amount) || 0);
   const formatted = n.toLocaleString("en-UG");
   return `${currency} ${formatted}`;

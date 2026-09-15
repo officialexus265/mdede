@@ -14,6 +14,7 @@ const ROLES: StaffRole[] = ["waiter", "cashier", "manager", "admin"];
 
 export function StaffPage() {
   const token = useStaffSession((s) => s.token);
+  const currentStaffId = useStaffSession((s) => s.staff?.id);
   const qc = useQueryClient();
   const list = useQuery({
     queryKey: ["staff"],
@@ -63,6 +64,7 @@ export function StaffPage() {
         <StaffEditor
           staff={edit === "new" ? null : edit}
           token={token}
+          isSelf={edit !== "new" && edit.id === currentStaffId}
           onClose={() => setEdit(null)}
           onSaved={() => {
             setEdit(null);
@@ -77,11 +79,13 @@ export function StaffPage() {
 function StaffEditor({
   staff,
   token,
+  isSelf,
   onClose,
   onSaved,
 }: {
   staff: (Partial<Staff> & { pin?: string }) | null;
   token: string;
+  isSelf: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -116,9 +120,21 @@ function StaffEditor({
         </DialogHeader>
         <div className="grid gap-3">
           <Input placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} />
+          {isSelf ? (
+            <p className="rounded-md bg-secondary px-3 py-2 text-xs text-muted-foreground">
+              You're editing your own account, so role and active status are locked — ask another manager or admin
+              to change those.
+            </p>
+          ) : null}
           <div className="flex flex-wrap gap-2">
             {ROLES.map((r) => (
-              <Button key={r} variant={role === r ? "default" : "outline"} size="sm" onClick={() => setRole(r)}>
+              <Button
+                key={r}
+                variant={role === r ? "default" : "outline"}
+                size="sm"
+                disabled={isSelf}
+                onClick={() => setRole(r)}
+              >
                 {ROLE_LABEL[r]}
               </Button>
             ))}
@@ -130,7 +146,7 @@ function StaffEditor({
             onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
           />
           <label className="flex items-center justify-between text-sm">
-            Active <Switch checked={active} onCheckedChange={setActive} />
+            Active <Switch checked={active} disabled={isSelf} onCheckedChange={setActive} />
           </label>
           {role === "waiter" ? (
             <label className="flex items-center justify-between text-sm">

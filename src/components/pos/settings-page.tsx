@@ -38,6 +38,8 @@ export function SettingsPage() {
   const [name, setName] = useState(r?.name ?? "M'dede Restaurant");
   const [address, setAddress] = useState(r?.address ?? "");
   const [phone, setPhone] = useState(r?.phone ?? "");
+  const [currency, setCurrency] = useState(r?.currency ?? "MWK");
+  const [timezone, setTimezone] = useState(r?.timezone ?? "Africa/Blantyre");
   const [tax, setTax] = useState(String(r?.taxRate ?? 18));
   const [service, setService] = useState(String(r?.serviceCharge ?? 0));
   const [header, setHeader] = useState(r?.receiptHeader ?? "");
@@ -50,6 +52,8 @@ export function SettingsPage() {
     setName(r.name);
     setAddress(r.address);
     setPhone(r.phone);
+    setCurrency(r.currency);
+    setTimezone(r.timezone);
     setTax(String(r.taxRate));
     setService(String(r.serviceCharge));
     setHeader(r.receiptHeader);
@@ -66,6 +70,8 @@ export function SettingsPage() {
           name,
           address,
           phone,
+          currency,
+          timezone,
           taxRate: Number(tax) || 0,
           serviceCharge: Number(service) || 0,
           receiptHeader: header,
@@ -96,6 +102,37 @@ export function SettingsPage() {
         <Field label="Phone">
           <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
         </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Currency">
+            <select
+              className="h-11 rounded-md border border-input bg-background px-3"
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+            >
+              <option value="MWK">MWK — Malawian Kwacha</option>
+              <option value="UGX">UGX — Ugandan Shilling</option>
+              <option value="KES">KES — Kenyan Shilling</option>
+              <option value="TZS">TZS — Tanzanian Shilling</option>
+              <option value="ZMW">ZMW — Zambian Kwacha</option>
+              <option value="ZAR">ZAR — South African Rand</option>
+              <option value="USD">USD — US Dollar</option>
+            </select>
+          </Field>
+          <Field label="Timezone">
+            <select
+              className="h-11 rounded-md border border-input bg-background px-3"
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+            >
+              <option value="Africa/Blantyre">Africa/Blantyre (Malawi)</option>
+              <option value="Africa/Lusaka">Africa/Lusaka</option>
+              <option value="Africa/Nairobi">Africa/Nairobi</option>
+              <option value="Africa/Kampala">Africa/Kampala</option>
+              <option value="Africa/Dar_es_Salaam">Africa/Dar_es_Salaam</option>
+              <option value="Africa/Johannesburg">Africa/Johannesburg</option>
+            </select>
+          </Field>
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Tax %">
             <Input value={tax} onChange={(e) => setTax(e.target.value)} />

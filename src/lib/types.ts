@@ -78,6 +78,7 @@ export type MenuItem = {
   kind: ItemKind;
   name: string;
   description: string;
+  imageUrl: string;
   price: number;
   available: boolean;
   soldOut: boolean;

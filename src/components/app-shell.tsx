@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { UserButton } from "@/lib/auth/gates";
+import { InstallAppButton } from "./install-app-button";
 import { clockInZone } from "@/lib/money";
 import {
   canManageMenu,
@@ -104,6 +105,7 @@ export function AppShell({
             <p className="text-xs text-muted-foreground tabular-nums">{now}</p>
           </div>
           <div className="flex items-center gap-3">
+            <InstallAppButton />
             <span className="hidden text-xs text-muted-foreground sm:inline">
               {staff.name} · {ROLE_LABEL[staff.role]}
             </span>

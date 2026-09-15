@@ -98,7 +98,7 @@ export function FloorPage() {
   const tables = floor.data.tables;
 
   const currency =
-    floor.data.restaurant?.currency ?? "UGX";
+    floor.data.restaurant?.currency ?? "MWK";
 
   const zones = [
     ...new Set(

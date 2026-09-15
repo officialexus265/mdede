@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { cloudinaryThumb } from "@/lib/image";
 import { formatMoney } from "@/lib/money";
 import {
   canClosePayments,
@@ -58,6 +59,7 @@ export function OrderPage({ orderId }: { orderId: number }) {
   const [pendingItem, setPendingItem] = useState<MenuItem | null>(null);
   const [payOpen, setPayOpen] = useState(false);
   const [tools, setTools] = useState<"move" | "merge" | "split" | "discount" | "void" | null>(null);
+  const [confirmKitchenPrint, setConfirmKitchenPrint] = useState(false);
 
   const restaurantQ = useQuery({ queryKey: ["restaurant"], queryFn: () => getRestaurant() });
   const orderQ = useQuery({
@@ -239,6 +241,13 @@ export function OrderPage({ orderId }: { orderId: number }) {
                   onClick={() => pickItem(item)}
                   className="min-h-24 rounded-xl border border-border bg-card p-3 text-left hover:border-primary disabled:opacity-40"
                 >
+                  {item.imageUrl ? (
+                    <img
+                      src={cloudinaryThumb(item.imageUrl, "w_240,h_160,c_fill,g_auto,f_auto,q_auto")}
+                      alt=""
+                      className="mb-2 h-16 w-full rounded-lg object-cover"
+                    />
+                  ) : null}
                   <div className="flex flex-wrap gap-1">
                     {item.isSpecial ? <Badge variant="special">Special</Badge> : null}
                     {item.soldOut ? <Badge variant="warning">86</Badge> : null}
@@ -271,14 +280,12 @@ export function OrderPage({ orderId }: { orderId: number }) {
           onPay={() => setPayOpen(true)}
           onPrintKitchen={async () => {
             const unsent = order.items.some((i) => !i.voided && !i.kitchenSent);
-            printHtml(kitchenTicketHtml(order, restaurant, !unsent && order.kitchenPrintCount > 0));
-            try {
-              await markKitchenPrinted({ data: { token, orderId } });
-              await refresh();
-              toast.success("Kitchen ticket sent");
-            } catch (e) {
-              toast.error((e as Error).message);
-            }
+            // Don't mark items as sent until the person confirms the ticket
+            // actually printed — browsers give no way to tell "printed" apart
+            // from "cancelled" on the print dialog, so committing eagerly here
+            // meant a cancelled print still locked the order's items as sent.
+            await printHtml(kitchenTicketHtml(order, restaurant, !unsent && order.kitchenPrintCount > 0));
+            setConfirmKitchenPrint(true);
           }}
           onBill={async () => {
             try {
@@ -317,6 +324,45 @@ export function OrderPage({ orderId }: { orderId: number }) {
             add.mutate({ menuItemId: pendingItem.id, ...payload });
           }}
         />
+      ) : null}
+
+      {confirmKitchenPrint ? (
+        <Dialog open onOpenChange={(v) => !v && setConfirmKitchenPrint(false)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Did the kitchen ticket print?</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              If you cancelled the print dialog or the printer didn't fire, choose "It didn't print" — the items
+              will stay unsent so you can try again.
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setConfirmKitchenPrint(false);
+                  toast.message("Not sent — items are still unsent. Print again when ready.");
+                }}
+              >
+                It didn't print
+              </Button>
+              <Button
+                onClick={async () => {
+                  setConfirmKitchenPrint(false);
+                  try {
+                    await markKitchenPrinted({ data: { token, orderId } });
+                    await refresh();
+                    toast.success("Kitchen ticket sent");
+                  } catch (e) {
+                    toast.error((e as Error).message);
+                  }
+                }}
+              >
+                Yes, it printed
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       ) : null}
 
       <PaymentDialog

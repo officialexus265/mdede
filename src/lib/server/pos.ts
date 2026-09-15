@@ -130,6 +130,8 @@ export const setupRestaurant = createServerFn({ method: "POST" })
     name: string;
     address?: string;
     phone?: string;
+    currency?: string;
+    timezone?: string;
     taxRate: number;
     serviceCharge: number;
     tableCount: number;
@@ -142,19 +144,21 @@ export const setupRestaurant = createServerFn({ method: "POST" })
     const existing = await getRestaurantRow(sql, context.userId);
     if (existing?.setupComplete) throw new Error("Restaurant already set up.");
     const name = data.name.trim() || "M'dede Restaurant";
+    const currency = data.currency?.trim() || "MWK";
+    const timezone = data.timezone?.trim() || "Africa/Blantyre";
     const pin = data.managerPin.trim();
     if (!/^\d{4,6}$/.test(pin)) throw new Error("Manager PIN must be 4–6 digits.");
     if (existing) {
       await sql.query(
-        `update restaurants set name=$2, address=$3, phone=$4, tax_rate=$5, service_charge=$6, setup_complete=true, sample_seeded=$7
+        `update restaurants set name=$2, address=$3, phone=$4, currency=$5, timezone=$6, tax_rate=$7, service_charge=$8, setup_complete=true, sample_seeded=$9
          where user_id=$1`,
-        [context.userId, name, data.address ?? "", data.phone ?? "", data.taxRate, data.serviceCharge, data.sample],
+        [context.userId, name, data.address ?? "", data.phone ?? "", currency, timezone, data.taxRate, data.serviceCharge, data.sample],
       );
     } else {
       await sql.query(
-        `insert into restaurants (user_id, name, address, phone, tax_rate, service_charge, setup_complete, sample_seeded, receipt_header)
-         values ($1,$2,$3,$4,$5,$6,true,$7,$2)`,
-        [context.userId, name, data.address ?? "", data.phone ?? "", data.taxRate, data.serviceCharge, data.sample],
+        `insert into restaurants (user_id, name, address, phone, currency, timezone, tax_rate, service_charge, setup_complete, sample_seeded, receipt_header)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,true,$9,$2)`,
+        [context.userId, name, data.address ?? "", data.phone ?? "", currency, timezone, data.taxRate, data.serviceCharge, data.sample],
       );
     }
     const staffCount = await sql.query<{ n: number }>(
@@ -914,6 +918,17 @@ export const saveStaff = createServerFn({ method: "POST" })
     if (!canManageStaff(actor)) throw new Error("Managers only.");
     const name = data.name.trim();
     if (!name) throw new Error("Name is required.");
+    // Self-service role/active changes are blocked outright — otherwise
+    // whoever is signed in can freely re-grant or strip their own access
+    // (e.g. an admin demoting themselves to cashier), and since the check
+    // above re-reads the actor's role fresh from the DB, a self-change that
+    // *does* slip through immediately invalidates that same actor's session
+    // for any further staff-management action — which is exactly the
+    // confusing "it said only a manager can do that, but it still changed"
+    // situation this guard exists to prevent.
+    if (data.id === actor.id && (data.role !== actor.role || data.active !== actor.active)) {
+      throw new Error("You can't change your own role or active status. Ask another manager or admin.");
+    }
     if (data.id) {
       if (data.pin && /^\d{4,6}$/.test(data.pin)) {
         await sql.query(

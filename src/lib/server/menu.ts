@@ -4,8 +4,22 @@ import { asBool, asInt } from "@/lib/money";
 import { canManageMenu } from "@/lib/permissions";
 import type { Category, ItemKind, MenuItem, Modifier } from "@/lib/types";
 import { requireStaff, sqlClient } from "./core";
+import { uploadImageToCloudinary } from "./cloudinary.server";
 
 type Token = { token: string };
+
+export const uploadMenuItemImage = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((d: Token & { dataUrl: string }) => d)
+  .handler(async ({ context, data }) => {
+    const sql = await sqlClient();
+    const staff = await requireStaff(sql, context.userId, data.token);
+    if (!canManageMenu(staff)) throw new Error("Managers only.");
+    if (!data.dataUrl.startsWith("data:image/")) throw new Error("That doesn't look like an image.");
+    if (data.dataUrl.length > 8_000_000) throw new Error("Image is too large — try a smaller photo.");
+    const url = await uploadImageToCloudinary(data.dataUrl, `mdede/${context.userId}/menu-items`);
+    return { url };
+  });
 
 async function loadModifiersForUser(sql: Awaited<ReturnType<typeof sqlClient>>, userId: string) {
   const mods = await sql.query<Record<string, unknown>>(
@@ -74,6 +88,7 @@ export const listMenu = createServerFn({ method: "POST" })
               kind,
               name: String(i.name),
               description: String(i.description ?? ""),
+              imageUrl: String(i.image_url ?? ""),
               price: asInt(i.price),
               available: asBool(i.available),
               soldOut: asBool(i.sold_out),
@@ -123,6 +138,7 @@ export const adminListMenu = createServerFn({ method: "POST" })
               kind,
               name: String(i.name),
               description: String(i.description ?? ""),
+              imageUrl: String(i.image_url ?? ""),
               price: asInt(i.price),
               available: asBool(i.available),
               soldOut: asBool(i.sold_out),
@@ -172,6 +188,7 @@ export const saveMenuItem = createServerFn({ method: "POST" })
       categoryId: number;
       name: string;
       description: string;
+      imageUrl?: string;
       price: number;
       soldOut: boolean;
       isSpecial: boolean;
@@ -185,11 +202,26 @@ export const saveMenuItem = createServerFn({ method: "POST" })
     const sql = await sqlClient();
     const staff = await requireStaff(sql, context.userId, data.token);
     if (!canManageMenu(staff)) throw new Error("Managers only.");
+    if (!data.name.trim()) throw new Error("Name is required.");
+    // category_id has no DB-level foreign key, so an invalid/leftover id (e.g. 0
+    // when no category exists yet) would otherwise insert silently and the item
+    // would never appear under any category in the menu — validate explicitly.
+    const [category] = await sql.query<{ id: number }>(
+      "select id from categories where id=$1 and user_id=$2",
+      [data.categoryId, context.userId],
+    );
+    if (!category) throw new Error("Choose a category first — create one with the \"Category\" button above.");
+    const imageUrl = data.imageUrl ?? "";
+    // Images are uploaded to Cloudinary first (see uploadMenuItemImage) and
+    // only the resulting URL is saved here, so this should always be a short
+    // link — reject anything else (e.g. a raw data URL slipping through).
+    if (imageUrl && !/^https?:\/\//.test(imageUrl)) throw new Error("Invalid image — please re-upload the photo.");
+    if (imageUrl.length > 2000) throw new Error("Invalid image URL.");
     let itemId = data.id;
     if (itemId) {
       await sql.query(
-        `update menu_items set category_id=$3, name=$4, description=$5, price=$6, sold_out=$7, is_special=$8,
-          low_stock=$9, stock_note=$10, active=$11, available=$12
+        `update menu_items set category_id=$3, name=$4, description=$5, image_url=$6, price=$7, sold_out=$8, is_special=$9,
+          low_stock=$10, stock_note=$11, active=$12, available=$13
          where id=$1 and user_id=$2`,
         [
           itemId,
@@ -197,6 +229,7 @@ export const saveMenuItem = createServerFn({ method: "POST" })
           data.categoryId,
           data.name.trim(),
           data.description.trim(),
+          imageUrl,
           asInt(data.price),
           data.soldOut,
           data.isSpecial,
@@ -208,13 +241,14 @@ export const saveMenuItem = createServerFn({ method: "POST" })
       );
     } else {
       const [row] = await sql.query<{ id: number }>(
-        `insert into menu_items (user_id, category_id, name, description, price, sold_out, is_special, low_stock, stock_note, active, available)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning id`,
+        `insert into menu_items (user_id, category_id, name, description, image_url, price, sold_out, is_special, low_stock, stock_note, active, available)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning id`,
         [
           context.userId,
           data.categoryId,
           data.name.trim(),
           data.description.trim(),
+          imageUrl,
           asInt(data.price),
           data.soldOut,
           data.isSpecial,

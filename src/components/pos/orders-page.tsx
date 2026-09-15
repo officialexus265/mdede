@@ -19,7 +19,7 @@ export function OrdersPage() {
     queryFn: () => listOrders({ data: { token, scope } }),
     enabled: !!token,
   });
-  const currency = restaurantQ.data?.currency ?? "UGX";
+  const currency = restaurantQ.data?.currency ?? "MWK";
 
   return (
     <div className="p-4 md:p-6">

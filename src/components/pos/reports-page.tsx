@@ -51,7 +51,7 @@ export function ReportsPage() {
   const voids = useQuery({ queryKey: ["rpt-void", from, to], queryFn: () => getDiscountVoidReport({ data: range }), enabled: !!token });
   const eod = useQuery({ queryKey: ["eod"], queryFn: () => getEodReport({ data: { token } }), enabled: !!token });
   const shift = useQuery({ queryKey: ["shift"], queryFn: () => getOpenShift({ data: { token } }), enabled: !!token });
-  const currency = restaurantQ.data?.currency ?? "UGX";
+  const currency = restaurantQ.data?.currency ?? "MWK";
   const [cash, setCash] = useState("");
   const close = useMutation({
     mutationFn: () => closeShift({ data: { token, declaredCash: Number(cash) || 0, notes: "" } }),
