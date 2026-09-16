@@ -10,7 +10,7 @@ import { listPaymentMethods, payOrder } from "@/lib/server/pos";
 import type { Order, Restaurant } from "@/lib/types";
 import { useStaffSession } from "@/store/session";
 
-type Line = { methodId: number; amount: string; tendered: string };
+type Line = { methodId: number; amount: string; tendered: string; tip: boolean };
 
 export function PaymentDialog({
   open,
@@ -44,11 +44,22 @@ export function PaymentDialog({
     if (!open) return;
     if (lines.length) return;
     if (cash) {
-      setLines([{ methodId: cash.id, amount: String(order.total), tendered: String(order.total) }]);
+      setLines([{ methodId: cash.id, amount: String(order.total), tendered: String(order.total), tip: false }]);
     } else if (active[0]) {
-      setLines([{ methodId: active[0].id, amount: String(order.total), tendered: "" }]);
+      setLines([{ methodId: active[0].id, amount: String(order.total), tendered: "", tip: false }]);
     }
   }, [open, cash, active, lines.length, order.total]);
+
+  const totalTip = useMemo(
+    () =>
+      lines.reduce((s, l) => {
+        const method = active.find((m) => m.id === l.methodId);
+        if (method?.kind !== "cash" || !l.tip) return s;
+        const change = Math.max(0, (Number(l.tendered) || 0) - (Number(l.amount) || 0));
+        return s + change;
+      }, 0),
+    [lines, active],
+  );
 
   const pay = useMutation({
     mutationFn: () =>
@@ -56,6 +67,7 @@ export function PaymentDialog({
         data: {
           token,
           orderId: order.id,
+          tipAmount: totalTip,
           payments: lines
             .map((l) => ({
               methodId: l.methodId,
@@ -70,7 +82,11 @@ export function PaymentDialog({
         printHtml(receiptHtml(paid, restaurant));
         onPaid(paid);
         onOpenChange(false);
-        toast.success(`Order #${paid.orderNumber} paid`);
+        toast.success(
+          totalTip > 0
+            ? `Order #${paid.orderNumber} paid — ${formatMoney(totalTip, restaurant.currency)} tip recorded`
+            : `Order #${paid.orderNumber} paid`,
+        );
       }
     },
     onError: (e: Error) => toast.error(e.message),
@@ -103,7 +119,12 @@ export function PaymentDialog({
               onClick={() =>
                 setLines((prev) => [
                   ...prev,
-                  { methodId: m.id, amount: String(remaining || order.total), tendered: m.kind === "cash" ? String(remaining || order.total) : "" },
+                  {
+                    methodId: m.id,
+                    amount: String(remaining || order.total),
+                    tendered: m.kind === "cash" ? String(remaining || order.total) : "",
+                    tip: false,
+                  },
                 ])
               }
             >
@@ -157,12 +178,33 @@ export function PaymentDialog({
                   )}
                 </div>
                 {method?.kind === "cash" ? (
-                  <p className="mt-2 text-sm tabular-nums">Change {formatMoney(change, restaurant.currency)}</p>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <p className="text-sm tabular-nums">Change {formatMoney(change, restaurant.currency)}</p>
+                    {change > 0 ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={line.tip ? "success" : "outline"}
+                        onClick={() =>
+                          setLines((p) => p.map((l, i) => (i === idx ? { ...l, tip: !l.tip } : l)))
+                        }
+                      >
+                        {line.tip ? "Change → tip ✓" : "Make it a tip"}
+                      </Button>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
             );
           })}
         </div>
+
+        {totalTip > 0 ? (
+          <p className="mt-3 rounded-lg border border-success/50 bg-success/10 p-3 text-sm">
+            Tip: <span className="font-medium tabular-nums">{formatMoney(totalTip, restaurant.currency)}</span> — half
+            to the waiter, half split among kitchen staff.
+          </p>
+        ) : null}
 
         <div className="mt-5 flex flex-col gap-2">
           <Button size="xl" disabled={pay.isPending || remaining > 0 || !lines.length} onClick={() => pay.mutate()}>

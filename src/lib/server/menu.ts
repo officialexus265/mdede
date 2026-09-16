@@ -161,22 +161,47 @@ export const saveCategory = createServerFn({ method: "POST" })
     const sql = await sqlClient();
     const staff = await requireStaff(sql, context.userId, data.token);
     if (!canManageMenu(staff)) throw new Error("Managers only.");
+    const name = data.name.trim();
+    if (!name) throw new Error("Name is required.");
+    const [dupe] = await sql.query<{ id: number }>(
+      "select id from categories where user_id=$1 and lower(name)=lower($2) and id is distinct from $3",
+      [context.userId, name, data.id ?? null],
+    );
+    if (dupe) throw new Error(`A category named "${name}" already exists.`);
     if (data.id) {
       await sql.query(`update categories set name=$3, kind=$4, active=$5 where id=$1 and user_id=$2`, [
         data.id,
         context.userId,
-        data.name.trim(),
+        name,
         data.kind,
         data.active,
       ]);
     } else {
       await sql.query(`insert into categories (user_id, name, kind, active, sort_order) values ($1,$2,$3,$4,99)`, [
         context.userId,
-        data.name.trim(),
+        name,
         data.kind,
         data.active,
       ]);
     }
+    return { ok: true };
+  });
+
+export const deleteCategory = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((d: Token & { id: number }) => d)
+  .handler(async ({ context, data }) => {
+    const sql = await sqlClient();
+    const staff = await requireStaff(sql, context.userId, data.token);
+    if (!canManageMenu(staff)) throw new Error("Managers only.");
+    const [{ n }] = await sql.query<{ n: number }>(
+      "select count(*)::int as n from menu_items where category_id=$1 and user_id=$2",
+      [data.id, context.userId],
+    );
+    if (asInt(n) > 0) {
+      throw new Error("This category still has meals/beverages in it — move or delete those first.");
+    }
+    await sql.query("delete from categories where id=$1 and user_id=$2", [data.id, context.userId]);
     return { ok: true };
   });
 
@@ -269,6 +294,20 @@ export const saveMenuItem = createServerFn({ method: "POST" })
       ]);
     }
     return { ok: true, id: itemId };
+  });
+
+export const deleteMenuItem = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((d: Token & { itemId: number }) => d)
+  .handler(async ({ context, data }) => {
+    const sql = await sqlClient();
+    const staff = await requireStaff(sql, context.userId, data.token);
+    if (!canManageMenu(staff)) throw new Error("Managers only.");
+    // Orders keep their own name/price/kind snapshot in order_items (see
+    // payOrder), so removing the menu item here doesn't touch order history.
+    await sql.query("delete from item_modifiers where item_id=$1 and user_id=$2", [data.itemId, context.userId]);
+    await sql.query("delete from menu_items where id=$1 and user_id=$2", [data.itemId, context.userId]);
+    return { ok: true };
   });
 
 export const toggleItemFlag = createServerFn({ method: "POST" })

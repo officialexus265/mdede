@@ -1,4 +1,4 @@
-export type StaffRole = "waiter" | "cashier" | "manager" | "admin";
+export type StaffRole = "waiter" | "cashier" | "manager" | "admin" | "kitchen";
 export type OrderStatus = "open" | "bill_requested" | "paid" | "voided";
 export type TableStatus = "free" | "occupied" | "bill_requested";
 export type ItemKind = "food" | "drink";
@@ -206,9 +206,19 @@ export type DashboardStats = {
   topItems: { name: string; qty: number; total: number }[];
 };
 
+export type TipReport = {
+  totalTips: number;
+  totalWaiterShare: number;
+  totalKitchenShare: number;
+  unassignedKitchenShare: number;
+  waiters: { name: string; count: number; total: number }[];
+  kitchen: { name: string; total: number }[];
+};
+
 export const ROLE_LABEL: Record<StaffRole, string> = {
   waiter: "Waiter",
   cashier: "Cashier",
   manager: "Manager",
   admin: "Admin",
+  kitchen: "Kitchen",
 };

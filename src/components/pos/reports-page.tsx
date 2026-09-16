@@ -25,6 +25,7 @@ import {
   getItemReport,
   getPaymentReport,
   getSalesReport,
+  getTipReport,
   getWaiterReport,
 } from "@/lib/server/reports";
 import { useStaffSession } from "@/store/session";
@@ -49,6 +50,7 @@ export function ReportsPage() {
   const cats = useQuery({ queryKey: ["rpt-cat", from, to], queryFn: () => getCategoryReport({ data: range }), enabled: !!token });
   const pays = useQuery({ queryKey: ["rpt-pay", from, to], queryFn: () => getPaymentReport({ data: range }), enabled: !!token });
   const voids = useQuery({ queryKey: ["rpt-void", from, to], queryFn: () => getDiscountVoidReport({ data: range }), enabled: !!token });
+  const tips = useQuery({ queryKey: ["rpt-tips", from, to], queryFn: () => getTipReport({ data: range }), enabled: !!token });
   const eod = useQuery({ queryKey: ["eod"], queryFn: () => getEodReport({ data: { token } }), enabled: !!token });
   const shift = useQuery({ queryKey: ["shift"], queryFn: () => getOpenShift({ data: { token } }), enabled: !!token });
   const currency = restaurantQ.data?.currency ?? "MWK";
@@ -96,6 +98,7 @@ export function ReportsPage() {
           <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="payments">Payments</TabsTrigger>
           <TabsTrigger value="voids">Discounts / voids</TabsTrigger>
+          <TabsTrigger value="tips">Tips</TabsTrigger>
           <TabsTrigger value="eod">End of day</TabsTrigger>
         </TabsList>
 
@@ -216,6 +219,48 @@ export function ReportsPage() {
             currency={currency}
           />
         </TabsContent>
+        <TabsContent value="tips" className="mt-4">
+          <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
+            <Tile label="Total tips" value={formatMoney(tips.data?.totalTips ?? 0, currency)} />
+            <Tile label="Waiters' half" value={formatMoney(tips.data?.totalWaiterShare ?? 0, currency)} />
+            <Tile label="Kitchen's half" value={formatMoney(tips.data?.totalKitchenShare ?? 0, currency)} />
+          </div>
+          {tips.data && tips.data.unassignedKitchenShare > 0 ? (
+            <p className="mb-4 rounded-lg border border-dashed border-warning/60 bg-warning/10 p-3 text-sm text-warning">
+              {formatMoney(tips.data.unassignedKitchenShare, currency)} of the kitchen's half is unassigned — no
+              active "Kitchen" staff existed yet when those tips came in. Add kitchen staff on the Staff page and
+              it'll split correctly from then on.
+            </p>
+          ) : null}
+          <h3 className="mb-2 font-medium">Waiters (their half, paid at month end)</h3>
+          <Table
+            rows={tips.data?.waiters ?? []}
+            onExport={() => downloadCsv("tips-waiters.csv", tips.data?.waiters ?? [])}
+            title="Waiter tips"
+            restaurant={restaurantQ.data}
+            cols={[
+              ["name", "Waiter"],
+              ["count", "Tips"],
+              ["total", "Total owed"],
+            ]}
+            money={["total"]}
+            currency={currency}
+          />
+          <h3 className="mt-6 mb-2 font-medium">Kitchen (split evenly among active kitchen staff)</h3>
+          <Table
+            rows={tips.data?.kitchen ?? []}
+            onExport={() => downloadCsv("tips-kitchen.csv", tips.data?.kitchen ?? [])}
+            title="Kitchen tips"
+            restaurant={restaurantQ.data}
+            cols={[
+              ["name", "Kitchen staff"],
+              ["total", "Total owed"],
+            ]}
+            money={["total"]}
+            currency={currency}
+          />
+        </TabsContent>
+
         <TabsContent value="eod" className="mt-4">
           {eod.data ? (
             <div className="grid gap-4 lg:grid-cols-2">

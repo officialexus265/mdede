@@ -3,14 +3,15 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DeleteButton } from "@/components/ui/delete-button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { listStaff, saveStaff } from "@/lib/server/pos";
+import { deleteStaff, listStaff, saveStaff } from "@/lib/server/pos";
 import { ROLE_LABEL, type Staff, type StaffRole } from "@/lib/types";
 import { useStaffSession } from "@/store/session";
 
-const ROLES: StaffRole[] = ["waiter", "cashier", "manager", "admin"];
+const ROLES: StaffRole[] = ["waiter", "cashier", "kitchen", "manager", "admin"];
 
 export function StaffPage() {
   const token = useStaffSession((s) => s.token);
@@ -28,7 +29,9 @@ export function StaffPage() {
       <div className="flex items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-3xl">Staff</h1>
-          <p className="text-sm text-muted-foreground">PINs clock people into this station.</p>
+          <p className="text-sm text-muted-foreground">
+            PINs clock people into this station. Add kitchen staff too — it's what lets tips split among them.
+          </p>
         </div>
         <Button onClick={() => setEdit("new")}>New staff</Button>
       </div>
@@ -111,6 +114,11 @@ function StaffEditor({
     onSuccess: onSaved,
     onError: (e: Error) => toast.error(e.message),
   });
+  const del = useMutation({
+    mutationFn: () => deleteStaff({ data: { token, id: staff!.id! } }),
+    onSuccess: onSaved,
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
@@ -156,6 +164,18 @@ function StaffEditor({
           <Button disabled={save.isPending} onClick={() => save.mutate()}>
             Save
           </Button>
+          {staff?.id && !isSelf ? (
+            <DeleteButton
+              pending={del.isPending}
+              onConfirm={() => del.mutate()}
+              label="Delete staff member"
+            />
+          ) : null}
+          {staff?.id && isSelf ? (
+            <p className="text-center text-xs text-muted-foreground">
+              You can't delete your own account — ask another manager or admin.
+            </p>
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>

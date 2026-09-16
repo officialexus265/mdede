@@ -528,12 +528,50 @@ export const requestBill = createServerFn({ method: "POST" })
     return loadOrder(sql, context.userId, data.orderId);
   });
 
+async function recordTip(
+  sql: Awaited<ReturnType<typeof sqlClient>>,
+  userId: string,
+  order: { id: number; orderNumber: number; waiterStaffId: number | null; waiterName: string },
+  amount: number,
+) {
+  if (amount <= 0) return;
+  // Waiter gets the odd kwacha on a non-even split, since they're the one
+  // who actually received the cash from the guest.
+  const waiterShare = Math.ceil(amount / 2);
+  const kitchenShare = amount - waiterShare;
+  const kitchenStaff = await sql.query<{ id: number; name: string }>(
+    "select id, name from staff where user_id=$1 and role='kitchen' and active=true order by id",
+    [userId],
+  );
+  const [tip] = await sql.query<{ id: number }>(
+    `insert into tips (user_id, order_id, order_number, waiter_staff_id, waiter_name, amount, waiter_share, kitchen_share, kitchen_recipient_count)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id`,
+    [userId, order.id, order.orderNumber, order.waiterStaffId, order.waiterName, amount, waiterShare, kitchenShare, kitchenStaff.length],
+  );
+  if (kitchenStaff.length > 0) {
+    // Split as evenly as integer division allows; hand the leftover kwacha
+    // out one-by-one to the first few people (by id) rather than losing it
+    // to rounding or dumping it all on one person.
+    const base = Math.floor(kitchenShare / kitchenStaff.length);
+    let remainder = kitchenShare - base * kitchenStaff.length;
+    for (const person of kitchenStaff) {
+      const share = base + (remainder > 0 ? 1 : 0);
+      if (remainder > 0) remainder -= 1;
+      await sql.query(
+        `insert into tip_kitchen_splits (tip_id, user_id, staff_id, staff_name, amount) values ($1,$2,$3,$4,$5)`,
+        [tip.id, userId, person.id, person.name, share],
+      );
+    }
+  }
+}
+
 export const payOrder = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator(
     (d: Token & {
       orderId: number;
       payments: { methodId: number; amount: number; tendered?: number }[];
+      tipAmount?: number;
     }) => d,
   )
   .handler(async ({ context, data }) => {
@@ -550,6 +588,7 @@ export const payOrder = createServerFn({ method: "POST" })
     );
     const byId = new Map(methods.map((m) => [asInt(m.id), m]));
     let paid = 0;
+    let changeAvailable = 0;
     for (const p of data.payments) {
       const method = byId.get(p.methodId);
       if (!method || !asBool(method.active)) throw new Error("Invalid payment method.");
@@ -558,6 +597,7 @@ export const payOrder = createServerFn({ method: "POST" })
       const kind = String(method.kind);
       const tendered = kind === "cash" ? Math.max(amount, asInt(p.tendered)) : amount;
       const change = kind === "cash" ? Math.max(0, tendered - amount) : 0;
+      changeAvailable += change;
       await sql.query(
         `insert into payments (user_id, order_id, method_id, method_name, method_kind, amount, tendered, change_amount, created_by)
          values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
@@ -576,11 +616,24 @@ export const payOrder = createServerFn({ method: "POST" })
       paid += amount;
     }
     if (paid < order.total) throw new Error("Payment does not cover the bill.");
+    // The tip can only be as large as the change actually available — the
+    // client computes and offers this, but never trust it blindly.
+    const tipAmount = Math.max(0, Math.min(asInt(data.tipAmount ?? 0), changeAvailable));
     await sql.query(`update orders set status='paid', paid_at=now() where id=$1 and user_id=$2`, [
       data.orderId,
       context.userId,
     ]);
-    await addEvent(sql, context.userId, data.orderId, staff, "paid", `Collected ${paid}`);
+    if (tipAmount > 0) {
+      await recordTip(sql, context.userId, order, tipAmount);
+    }
+    await addEvent(
+      sql,
+      context.userId,
+      data.orderId,
+      staff,
+      "paid",
+      tipAmount > 0 ? `Collected ${paid} (tip ${tipAmount})` : `Collected ${paid}`,
+    );
     return loadOrder(sql, context.userId, data.orderId);
   });
 
@@ -883,6 +936,19 @@ export const savePaymentMethod = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const deletePaymentMethod = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((d: Token & { id: number }) => d)
+  .handler(async ({ context, data }) => {
+    const sql = await sqlClient();
+    const staff = await requireStaff(sql, context.userId, data.token);
+    if (!canManageSettings(staff)) throw new Error("Managers only.");
+    // Payments keep their own method_name/method_kind snapshot (see payOrder),
+    // so removing the method here doesn't affect historical reports.
+    await sql.query("delete from payment_methods where id=$1 and user_id=$2", [data.id, context.userId]);
+    return { ok: true };
+  });
+
 export const listStaff = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((d: Token) => d)
@@ -949,6 +1015,32 @@ export const saveStaff = createServerFn({ method: "POST" })
         [context.userId, name, data.role, hashPin(context.userId, pin), data.active, data.canClosePayments],
       );
     }
+    return { ok: true };
+  });
+
+export const deleteStaff = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((d: Token & { id: number }) => d)
+  .handler(async ({ context, data }) => {
+    const sql = await sqlClient();
+    const actor = await requireStaff(sql, context.userId, data.token);
+    if (!canManageStaff(actor)) throw new Error("Managers only.");
+    if (data.id === actor.id) throw new Error("You can't delete your own account. Ask another manager or admin.");
+    const [target] = await sql.query<{ role: StaffRole }>(
+      "select role from staff where id=$1 and user_id=$2",
+      [data.id, context.userId],
+    );
+    if (!target) throw new Error("Staff member not found.");
+    if (target.role === "manager" || target.role === "admin") {
+      const [{ n }] = await sql.query<{ n: number }>(
+        `select count(*)::int as n from staff where user_id=$1 and active=true and role in ('manager','admin') and id<>$2`,
+        [context.userId, data.id],
+      );
+      if (asInt(n) === 0) throw new Error("Can't delete the only manager/admin — promote someone else first.");
+    }
+    // Orders/payments/tips keep their own waiter_name/staff_name snapshot, so
+    // deleting the staff row doesn't break historical reports.
+    await sql.query("delete from staff where id=$1 and user_id=$2", [data.id, context.userId]);
     return { ok: true };
   });
 
@@ -1023,6 +1115,22 @@ export const saveTable = createServerFn({ method: "POST" })
         [context.userId, data.name.trim(), data.zone.trim() || "Dining", asInt(data.seats) || 4, data.active],
       );
     }
+    return { ok: true };
+  });
+
+export const deleteTable = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((d: Token & { id: number }) => d)
+  .handler(async ({ context, data }) => {
+    const sql = await sqlClient();
+    const staff = await requireStaff(sql, context.userId, data.token);
+    if (!canManageSettings(staff)) throw new Error("Managers only.");
+    const [busy] = await sql.query<{ id: number }>(
+      `select id from orders where user_id=$1 and table_id=$2 and status in ('open','bill_requested') limit 1`,
+      [context.userId, data.id],
+    );
+    if (busy) throw new Error("This table has an open order — close or move it first.");
+    await sql.query("delete from dining_tables where id=$1 and user_id=$2", [data.id, context.userId]);
     return { ok: true };
   });
 

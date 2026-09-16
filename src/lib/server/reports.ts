@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { asInt, asIso } from "@/lib/money";
 import { canViewReports } from "@/lib/permissions";
-import type { DashboardStats } from "@/lib/types";
+import type { DashboardStats, TipReport } from "@/lib/types";
 import { requireStaff, sqlClient } from "./core";
 
 type Token = { token: string };
@@ -329,4 +329,65 @@ export const getEodReport = createServerFn({ method: "POST" })
       declaredCash: declared,
       variance: declared == null ? null : declared - expectedCash,
     };
+  });
+
+export const getTipReport = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((d: Range) => d)
+  .handler(async ({ context, data }) => {
+    const sql = await sqlClient();
+    const staff = await requireStaff(sql, context.userId, data.token);
+    if (!canViewReports(staff)) throw new Error("Managers only.");
+    const { a, b } = dates(data.from, data.to);
+    const tips = await sql.query<{
+      waiter_name: string;
+      waiter_share: unknown;
+      kitchen_share: unknown;
+      kitchen_recipient_count: unknown;
+    }>(
+      `select waiter_name, waiter_share, kitchen_share, kitchen_recipient_count
+       from tips where user_id=$1 and created_at::date between $2 and $3`,
+      [context.userId, a, b],
+    );
+    const kitchen = await sql.query<{ staff_name: string; amount: unknown }>(
+      `select k.staff_name, k.amount
+       from tip_kitchen_splits k join tips t on t.id=k.tip_id
+       where k.user_id=$1 and t.created_at::date between $2 and $3`,
+      [context.userId, a, b],
+    );
+
+    const waiterMap = new Map<string, { count: number; total: number }>();
+    let totalWaiterShare = 0;
+    let totalKitchenShare = 0;
+    let unassignedKitchenShare = 0;
+    for (const t of tips) {
+      const waiterShare = asInt(t.waiter_share);
+      const kitchenShare = asInt(t.kitchen_share);
+      totalWaiterShare += waiterShare;
+      totalKitchenShare += kitchenShare;
+      if (asInt(t.kitchen_recipient_count) === 0) unassignedKitchenShare += kitchenShare;
+      const row = waiterMap.get(t.waiter_name) ?? { count: 0, total: 0 };
+      row.count += 1;
+      row.total += waiterShare;
+      waiterMap.set(t.waiter_name, row);
+    }
+
+    const kitchenMap = new Map<string, number>();
+    for (const k of kitchen) {
+      kitchenMap.set(k.staff_name, (kitchenMap.get(k.staff_name) ?? 0) + asInt(k.amount));
+    }
+
+    const report: TipReport = {
+      totalTips: totalWaiterShare + totalKitchenShare,
+      totalWaiterShare,
+      totalKitchenShare,
+      unassignedKitchenShare,
+      waiters: [...waiterMap.entries()]
+        .map(([name, v]) => ({ name, count: v.count, total: v.total }))
+        .sort((x, y) => y.total - x.total),
+      kitchen: [...kitchenMap.entries()]
+        .map(([name, total]) => ({ name, total }))
+        .sort((x, y) => y.total - x.total),
+    };
+    return report;
   });

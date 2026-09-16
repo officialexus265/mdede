@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DeleteButton } from "@/components/ui/delete-button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -11,6 +12,8 @@ import { formatMoney } from "@/lib/money";
 import { cloudinaryThumb, resizeImageToDataUrl } from "@/lib/image";
 import {
   adminListMenu,
+  deleteCategory,
+  deleteMenuItem,
   saveCategory,
   saveMenuItem,
   saveModifier,
@@ -18,7 +21,7 @@ import {
   uploadMenuItemImage,
 } from "@/lib/server/menu";
 import { getRestaurant } from "@/lib/server/pos";
-import type { ItemKind, MenuItem, Modifier } from "@/lib/types";
+import type { Category, ItemKind, MenuItem, Modifier } from "@/lib/types";
 import { useStaffSession } from "@/store/session";
 
 export function MenuPage() {
@@ -31,7 +34,7 @@ export function MenuPage() {
     enabled: !!token,
   });
   const [edit, setEdit] = useState<MenuItem | "new" | null>(null);
-  const [catOpen, setCatOpen] = useState(false);
+  const [catEdit, setCatEdit] = useState<Category | "new" | null>(null);
   const [modOpen, setModOpen] = useState(false);
   const currency = restaurantQ.data?.currency ?? "MWK";
 
@@ -55,7 +58,7 @@ export function MenuPage() {
           <p className="text-sm text-muted-foreground">Specials, 86s, and modifiers for the station.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setCatOpen(true)}>
+          <Button variant="outline" onClick={() => setCatEdit("new")}>
             Category
           </Button>
           <Button variant="outline" onClick={() => setModOpen(true)}>
@@ -80,9 +83,10 @@ export function MenuPage() {
 
       {(menu.data?.categories ?? []).map((c) => (
         <section key={c.id} className="mt-8">
-          <h2 className="font-display text-xl">
-            {c.name} <span className="text-sm text-muted-foreground">{c.kind}</span>
-          </h2>
+          <button type="button" className="flex items-center gap-2 hover:underline" onClick={() => setCatEdit(c)}>
+            <h2 className="font-display text-xl">{c.name}</h2>
+            <span className="text-sm text-muted-foreground">{c.kind}</span>
+          </button>
           <div className="mt-3 overflow-x-auto rounded-xl border border-border">
             <table className="w-full min-w-[48rem] text-left text-sm">
               <thead className="bg-secondary text-muted-foreground">
@@ -150,12 +154,13 @@ export function MenuPage() {
           }}
         />
       ) : null}
-      {catOpen ? (
+      {catEdit ? (
         <CategoryDialog
+          category={catEdit === "new" ? null : catEdit}
           token={token}
-          onClose={() => setCatOpen(false)}
+          onClose={() => setCatEdit(null)}
           onSaved={() => {
-            setCatOpen(false);
+            setCatEdit(null);
             refresh();
           }}
         />
@@ -208,6 +213,11 @@ function ItemEditor({
   const [stockNote, setStockNote] = useState(item?.stockNote ?? "");
   const [active, setActive] = useState(item?.active ?? true);
   const [modifierIds, setModifierIds] = useState<number[]>(item?.modifiers.map((m) => m.id) ?? []);
+  const del = useMutation({
+    mutationFn: () => deleteMenuItem({ data: { token, itemId: item!.id } }),
+    onSuccess: onSaved,
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
@@ -308,32 +318,41 @@ function ItemEditor({
               })}
             </div>
           </div>
-          <Button
-            disabled={imageBusy}
-            onClick={() =>
-              void saveMenuItem({
-                data: {
-                  token,
-                  id: item?.id,
-                  categoryId,
-                  name,
-                  description,
-                  imageUrl,
-                  price: Number(price) || 0,
-                  soldOut,
-                  isSpecial,
-                  lowStock,
-                  stockNote,
-                  active,
-                  modifierIds,
-                },
-              })
-                .then(onSaved)
-                .catch((e: Error) => toast.error(e.message))
-            }
-          >
-            Save
-          </Button>
+          <div className="flex items-center justify-between gap-2">
+            <Button
+              disabled={imageBusy}
+              onClick={() =>
+                void saveMenuItem({
+                  data: {
+                    token,
+                    id: item?.id,
+                    categoryId,
+                    name,
+                    description,
+                    imageUrl,
+                    price: Number(price) || 0,
+                    soldOut,
+                    isSpecial,
+                    lowStock,
+                    stockNote,
+                    active,
+                    modifierIds,
+                  },
+                })
+                  .then(onSaved)
+                  .catch((e: Error) => toast.error(e.message))
+              }
+            >
+              Save
+            </Button>
+            {item ? (
+              <DeleteButton
+                pending={del.isPending}
+                onConfirm={() => del.mutate()}
+                label="Delete item"
+              />
+            ) : null}
+          </div>
         </div>
       </DialogContent>
     </Dialog>
@@ -341,21 +360,29 @@ function ItemEditor({
 }
 
 function CategoryDialog({
+  category,
   token,
   onClose,
   onSaved,
 }: {
+  category: Category | null;
   token: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [name, setName] = useState("");
-  const [kind, setKind] = useState<ItemKind>("food");
+  const [name, setName] = useState(category?.name ?? "");
+  const [kind, setKind] = useState<ItemKind>(category?.kind ?? "food");
+  const [active, setActive] = useState(category?.active ?? true);
+  const del = useMutation({
+    mutationFn: () => deleteCategory({ data: { token, id: category!.id } }),
+    onSuccess: onSaved,
+    onError: (e: Error) => toast.error(e.message),
+  });
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>New category</DialogTitle>
+          <DialogTitle>{category ? "Edit category" : "New category"}</DialogTitle>
         </DialogHeader>
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" />
         <div className="mt-3 flex gap-2">
@@ -366,16 +393,25 @@ function CategoryDialog({
             Drink
           </Button>
         </div>
-        <Button
-          className="mt-4"
-          onClick={() =>
-            void saveCategory({ data: { token, name, kind, active: true } })
-              .then(onSaved)
-              .catch((e: Error) => toast.error(e.message))
-          }
-        >
-          Save
-        </Button>
+        {category ? (
+          <label className="mt-3 flex items-center justify-between text-sm">
+            Active <Switch checked={active} onCheckedChange={setActive} />
+          </label>
+        ) : null}
+        <div className="mt-4 flex items-center justify-between gap-2">
+          <Button
+            onClick={() =>
+              void saveCategory({ data: { token, id: category?.id, name, kind, active } })
+                .then(onSaved)
+                .catch((e: Error) => toast.error(e.message))
+            }
+          >
+            Save
+          </Button>
+          {category ? (
+            <DeleteButton pending={del.isPending} onConfirm={() => del.mutate()} label="Delete category" />
+          ) : null}
+        </div>
       </DialogContent>
     </Dialog>
   );
