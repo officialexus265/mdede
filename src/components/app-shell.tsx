@@ -23,6 +23,7 @@ import { pinLogout } from "@/lib/server/pos";
 import type { Restaurant, Staff } from "@/lib/types";
 import { ROLE_LABEL } from "@/lib/types";
 import { useStaffSession } from "@/store/session";
+import { MobileNav } from "./mobile-nav";
 import { Button } from "./ui/button";
 
 const NAV = [
@@ -56,6 +57,11 @@ export function AppShell({
 
   const items = NAV.filter((n) => n.show(staff));
 
+  const clockOut = () => {
+    void pinLogout({ data: { token } });
+    clear();
+  };
+
   return (
     <div className="flex min-h-dvh bg-background">
       <aside className="no-print sticky top-0 hidden h-dvh w-52 shrink-0 flex-col border-r border-border bg-card md:flex">
@@ -87,10 +93,7 @@ export function AppShell({
             variant="ghost"
             size="sm"
             className="mt-2 w-full justify-start"
-            onClick={() => {
-              void pinLogout({ data: { token } });
-              clear();
-            }}
+            onClick={clockOut}
           >
             <LogOut className="size-4" />
             Clock out
@@ -100,9 +103,12 @@ export function AppShell({
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="no-print flex h-14 items-center justify-between gap-3 border-b border-border px-4">
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium md:hidden">{restaurant.name}</p>
-            <p className="text-xs text-muted-foreground tabular-nums">{now}</p>
+          <div className="flex min-w-0 items-center gap-2">
+            <MobileNav items={items} pathname={pathname} staff={staff} restaurant={restaurant} onClockOut={clockOut} />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium md:hidden">{restaurant.name}</p>
+              <p className="text-xs text-muted-foreground tabular-nums">{now}</p>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <InstallAppButton />
